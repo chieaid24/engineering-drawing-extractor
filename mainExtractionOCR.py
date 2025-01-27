@@ -12,11 +12,11 @@ pytesseract.pytesseract.tesseract_cmd = 'C:\\Program Files\\Tesseract-OCR\\tesse
 
 wb = Workbook()
 
-for image in range(1,21):
+for image in range(1,2):
     img_path = os.path.join("images", f'{image:02}.png')
     
     # Check if the image file exists before reading
-    if (os.path.exists(img_path) == False):
+    if not (os.path.exists(img_path)):
         print("Image ", f'{image:02}.png', " not found.")
         continue
         
@@ -27,11 +27,17 @@ for image in range(1,21):
     # --- Cropping + border image --- #
     img = init_img[12:init_row-15, 12:init_col-12]
     [nrow, ncol] = img.shape
-    
+
+
+
     
     # --- Isolating vertical & horizontal lines --- #
     ret, bin_img= cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     
+    # --- Print image --- #
+    # pt.figure()
+    # pt.imshow(bin_img, cmap="gray")
+
     horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, ncol//150))
     eroded_verti = cv2.erode(bin_img, horiz_kernel, iterations = 5)
     vertical_lines = cv2.dilate(eroded_verti, horiz_kernel, iterations = 5)
@@ -39,39 +45,47 @@ for image in range(1,21):
     verti_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (nrow//150, 1))
     eroded_hori = cv2.erode(bin_img, verti_kernel, iterations=5)
     horizontal_lines = cv2.dilate(eroded_hori, verti_kernel, iterations = 5)
-    
+        
     combined_lines = cv2.bitwise_or(vertical_lines, horizontal_lines)
-    
+
     
     # --- Drawing remove --- #
     rect_kernel3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     drawingMask = cv2.erode(combined_lines, rect_kernel3, iterations = 2)
     drawingMask = cv2.dilate(drawingMask, rect_kernel3, iterations = 50)
     table_lines = drawingMask + np.bitwise_not(combined_lines)
-    
-    
+
+
+    pt.figure()
+    pt.imshow(table_lines)
+
     # --- Removing arrow lines --- #
+
+    # --- mapping the countours, and sorting them by area --- #
     table_lines_dil = cv2.dilate(np.bitwise_not(table_lines), rect_kernel3, iterations = 5)
-    
     contours, hierarchy = cv2.findContours(table_lines_dil, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     sorted_contours = sorted(contours, key=cv2.contourArea, reverse = False)
     
-    
+
+
     # --- Filling remaining drawing contours w/ white --- #
     table_bgr = cv2.cvtColor(table_lines, cv2.COLOR_GRAY2BGR)
     
+    # Loop through all contours, if their height or width is less than 30, delete them (fill w white)
     for i in range(0, len(sorted_contours)):
         cntr = sorted_contours[i]
         x, y, w, h = cv2.boundingRect(cntr)
         if (w < 30 or h < 30):
             cv2.drawContours(table_bgr, sorted_contours, i, (255, 255, 255), thickness=-1)
     
+    #convert table into greyscale, and then into binary (black&white)
     table_only = cv2.cvtColor(table_bgr, cv2.COLOR_BGR2GRAY)
     _, table_only = cv2.threshold(table_only, 150, 255, cv2.THRESH_BINARY)
             
     
-    # --- Isolating table cells --- #
+    # --- create a border around the entire thing, dilate, find contours again --- #
     table_only_copy = cv2.copyMakeBorder(table_only, 5, 5, 5, 5, cv2.BORDER_CONSTANT, 0)
+
     table_lines_dil2 = cv2.dilate(np.bitwise_not(table_only_copy), rect_kernel3, iterations = 1)
     cell_cntr, hierarchy = cv2.findContours(table_lines_dil2, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     
@@ -82,6 +96,8 @@ for image in range(1,21):
     keywords = ["DRAWING NUMBER", "DRAWING NO", "DRAWN BY", "DRAWN", "CHECKED BY", "CHECKED", "TITLE", "DRAWING TITLE", "APPPROVED BY", "APPROVED", "CONTRACTOR", "COMPANY", "UNIT", "STATUS", "PAGE", "PROJECT NO", "PROJECT NUM", "LANG", "CAD NO", "FONT", "FONT STYLE", "AMENDMENTS"]
     useful_cells = []
     
+
+    # STOPPEED HER!
     for c in cell_cntr:
         coordinates = cv2.boundingRect(c)
         x, y, w, h = coordinates
